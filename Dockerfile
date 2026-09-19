@@ -1,26 +1,20 @@
 # udpxy — 多阶段构建，静态链接
 # ============================================================
-# 构建阶段：ubuntu:26.04（glibc 2.43 / GCC 15 / binutils 2.46）
-# 运行阶段：alpine:3.21（保持不变）
-#
-# 产物仍是静态链接二进制，运行阶段不依赖任何动态库，
-# 因此运行镜像的行为与改造前一致。
-#
-# 从 alpine 迁到 ubuntu 需要改动的地方（其实就是「alpine 内置的东西 ubuntu 都没有」）：
-#   1. 包管理器    apk            → apt-get
-#   2. 编译工具集  build-base     → build-essential + libc6-dev
-#   3. 下载工具    busybox wget   → 需显式安装，这里统一改用 curl
-#                                  （与 msd / msd_lite 两个镜像保持一致）
-#   4. 静态链接    CFLAGS/LDFLAGS 不用动，见下方说明
+# 构建阶段与运行阶段统一使用 alpine:3.21（musl），好处：
+#   1. 构建/运行同一 libc，且 musl 静态二进制远小于 glibc 静态二进制
+#      （实测 glibc 静态版 1,079,848 字节 vs musl 静态版 157,368 字节）
+#   2. musl 自带 DNS 解析器，静态链接下不依赖运行时 NSS 共享库
+#   3. apk 源已替换为清华镜像，避免 dl-cdn.alpinelinux.org 在国内过慢
 # ============================================================
-FROM ubuntu:latest AS builder
+FROM alpine:3.21 AS builder
 
 ARG UDPXY_BRANCH=master
 
-RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-        ca-certificates curl tar gzip \
-        build-essential make gcc libc6-dev \
-    && rm -rf /var/lib/apt/lists/*
+RUN set -eux; \
+    sed -i 's|dl-cdn.alpinelinux.org|mirrors.tuna.tsinghua.edu.cn|g' /etc/apk/repositories; \
+    grep -q 'mirrors.tuna.tsinghua.edu.cn' /etc/apk/repositories; \
+    apk add --no-cache \
+        build-base make gcc tar gzip curl ca-certificates
 
 WORKDIR /src
 
@@ -43,11 +37,9 @@ RUN set -eux; \
 
 # 静态编译，产物不依赖任何动态库。
 #
-# 注意：这里**不需要**像 msd / msd_lite 那样追加 -no-pie。
-# 原因：udpxy 用 Makefile 构建，gcc 的 -static 驱动规格本身就抑制了 PIE；
-#       而 msd / msd_lite 用 CMake，CMakeLists 里的 try_linker_flag 会主动探测并
-#       追加 -pie / -z relro，才必须显式用 -no-pie 压掉。
-# 实测：加与不加 -no-pie，产物字节完全相同（1079848 字节，ET_EXEC，静态链接）。
+# 这里不需要 -no-pie：udpxy 用 Makefile 构建，gcc 的 -static 驱动规格本身就抑制了 PIE。
+# （对比：msd / msd_lite 用 CMake，CMakeLists 里的 try_linker_flag 会主动探测并追加
+#   -pie / -z relro，才必须显式用 -no-pie 压掉。）
 WORKDIR /src/chipmunk
 RUN set -eux; \
     make clean || true; \
@@ -59,16 +51,18 @@ RUN set -eux; \
     test -x /out/udpxy.real
 
 # ============================================================
-# Stage 2: 运行（与原版完全一致）
+# Stage 2: 运行
 # ============================================================
-FROM alpine:latest
+FROM alpine:3.21
 
 LABEL org.opencontainers.image.title="udpxy" \
       org.opencontainers.image.description="UDP-to-HTTP multicast relay (udpxy), statically linked" \
       org.opencontainers.image.source="https://github.com/pcherenkov/udpxy" \
       org.opencontainers.image.licenses="GPL-3.0-or-later"
 
+# 运行阶段也要装包，同样先换清华源
 RUN set -eux; \
+    sed -i 's|dl-cdn.alpinelinux.org|mirrors.tuna.tsinghua.edu.cn|g' /etc/apk/repositories; \
     apk add --no-cache tzdata curl; \
     cp /usr/share/zoneinfo/Asia/Shanghai /etc/localtime; \
     echo "Asia/Shanghai" > /etc/timezone; \
