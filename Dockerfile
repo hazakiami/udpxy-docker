@@ -6,7 +6,7 @@
 #   2. musl 自带 DNS 解析器，静态链接下不依赖运行时 NSS 共享库
 #   3. apk 源已替换为清华镜像，避免 dl-cdn.alpinelinux.org 在国内过慢
 # ============================================================
-FROM alpine:3.21 AS builder
+FROM alpine:latest AS builder
 
 ARG UDPXY_BRANCH=master
 
@@ -53,7 +53,7 @@ RUN set -eux; \
 # ============================================================
 # Stage 2: 运行
 # ============================================================
-FROM alpine:3.21
+FROM alpine:latest
 
 LABEL org.opencontainers.image.title="udpxy" \
       org.opencontainers.image.description="UDP-to-HTTP multicast relay (udpxy), statically linked" \
