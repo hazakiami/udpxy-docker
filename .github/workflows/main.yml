@@ -42,12 +42,12 @@ jobs:
             # 推送到默认分支 -> latest
             type=raw,value=latest,enable={{is_default_branch}}
             # 打 v1.2.3 标签 -> 1.2.3 和 1.2
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
+            #type=semver,pattern={{version}}
+            #type=semver,pattern={{major}}.{{minor}}
             # 其他分支 -> 分支名
-            type=ref,event=branch
+            #type=ref,event=branch
             # 每次提交 -> sha-xxxxxxx，方便回溯
-            type=sha,prefix=sha-,format=short
+            #type=sha,prefix=sha-,format=short
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
